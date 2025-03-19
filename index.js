@@ -10,7 +10,30 @@ const app = express();
 const contentMatch = /content="(?<content>.{31,})"/gis;
 const maxTextLength = 31;
 const aceptHost = 'example.org'; //Your host name
-const aceptUrlStr = ['fxtwitter.com', 'vxtwitter.com', 'fixvx.com', 'www.phixiv.net'];
+const aceptUrlStr = [
+  'fxtwitter.com',
+  'vxtwitter.com',
+  'fixvx.com',
+  'www.phixiv.net',
+  't',
+  'p'
+];
+const overrideTable = new Map([
+  [ /^t\/(?<s>.+)/i, 'fxtwitter.com' ],
+  [ /^p\/(?<s>\d+\/\d+)/i, 'www.phixiv.net/artworks' ],
+  [ /^p\/(?<s>\d+)/i, 'www.phixiv.net/artworks' ],
+  [ /^p\/(?<s>.+)/i, 'www.phixiv.net' ]
+]);
+
+function overrideFilter(url) {
+  let o = '';
+  for(let r of overrideTable.keys()) {
+    o = r.exec(url);
+	if(o)
+      return overrideTable.get(r) + '/' + o.groups.s;
+  }
+  return url;
+}
 
 function invalidUrl(url) {
   let invalid = true;
@@ -56,7 +79,7 @@ app.get('*', (req, res) => {
   if(invalidUrl(req.url) || aceptHost != req.headers.host) {
 	res.status(404).send("Not found.");
   } else {
-	let inputUrl = req.url.slice(1);
+	let inputUrl = overrideFilter(req.url.slice(1));
     let headers = JSON.parse(JSON.stringify(req.headers));
     headers['host'] = inputUrl.split('/')[0];
     let config = {
@@ -64,7 +87,7 @@ app.get('*', (req, res) => {
       maxBodyLength: Infinity,
       maxContentLength: 5000,
       maxRedirects: 0,
-      url: 'https://' + req.url.slice(1),
+      url: 'https://' + inputUrl,
       headers: headers
     };
     axios.request(config)
@@ -72,7 +95,11 @@ app.get('*', (req, res) => {
       res.send(reduceLength(response.data, headers['host']));
     })
     .catch((error) => {
-      console.log(error);
+	  if(error.response.status == 307) {
+        res.redirect(307, error.response.headers.location);
+	  } else {
+        console.log(error);
+	  }
     });
   }
 })
